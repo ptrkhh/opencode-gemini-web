@@ -1,0 +1,16 @@
+{
+  "name": "opencode-hydrogen",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node serve.mjs",
+    "test": "node --test",
+    "login": "node login.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.1"
+  }
+}
