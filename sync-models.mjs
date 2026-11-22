@@ -62,11 +62,18 @@ function readConfig(path) {
   }
 }
 
-async function main() {
-  const [argument] = process.argv.slice(2);
+export function main(args = process.argv.slice(2)) {
+  return run(args).catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
+
+async function run(args) {
+  const [argument] = args;
   const keyPath = join(stateDir, 'key');
   const key = readConfig(keyPath)?.trim();
-  if (!key) throw new Error('Start the adapter with npm start before syncing OpenCode.');
+  if (!key) throw new Error('Start the adapter with opencode-gemini-web start before syncing OpenCode.');
   const response = await fetch(baseURL + '/models', {
     headers: { Authorization: 'Bearer ' + key },
     signal: AbortSignal.timeout(45_000),
@@ -88,7 +95,7 @@ async function main() {
   try {
     config = original === undefined ? {} : JSON.parse(original);
   } catch {
-    throw new Error(`Could not parse ${target} as JSON. Run npm run --silent sync-models -- --print and merge the provider into that file.`);
+    throw new Error(`Could not parse ${target} as JSON. Run opencode-gemini-web sync --print and merge the provider into that file.`);
   }
   const updated = JSON.stringify(syncConfig(config, catalog, keyPath), null, 2) + '\n';
   if (updated !== original) {
@@ -106,9 +113,4 @@ async function main() {
   console.log(catalog.map(({ id, name }) => `gemini-web/${id}  ${name}`).join('\n'));
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => {
-    console.error(error.message);
-    process.exitCode = 1;
-  });
-}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

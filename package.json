@@ -1,7 +1,11 @@
 {
   "name": "opencode-gemini-web",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Use your signed-in Gemini web account's models from OpenCode through a local adapter",
   "type": "module",
+  "bin": {
+    "opencode-gemini-web": "cli.mjs"
+  },
   "engines": {
     "node": ">=22"
   },

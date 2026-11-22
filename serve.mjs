@@ -9,7 +9,7 @@ const generationTimeout = 150_000;
 let browserConnection;
 
 function loginRequired() {
-  return new RequestError(401, 'Sign in to Gemini again. Run npm run login in the adapter folder, finish in Chrome, then retry in OpenCode.', 'gemini_login_required');
+  return new RequestError(401, 'Sign in to Gemini again. Run opencode-gemini-web login, finish in Chrome, then retry in OpenCode.', 'gemini_login_required');
 }
 
 async function withChat(signal, operation) {

@@ -38,7 +38,7 @@ export async function selectModel(page, id) {
   const { picker, menu, choices } = await readModelMenu(page);
   const choice = choices.find(option => option.id === id);
   if (!choice) {
-    throw new RequestError(404, 'That model is unavailable for the signed-in Gemini account. Refresh OpenCode with npm run sync-models.', 'gemini_model_unavailable');
+    throw new RequestError(404, 'That model is unavailable for the signed-in Gemini account. Refresh OpenCode with opencode-gemini-web sync.', 'gemini_model_unavailable');
   }
   if (!choice.checked) {
     const option = menu.locator(`[data-test-id="${choice.key}"]`);

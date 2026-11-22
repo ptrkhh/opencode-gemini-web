@@ -62,7 +62,7 @@ export async function openBrowser() {
     if (connection) return connection;
     await delay(200);
   }
-  throw new Error('Unable to open the Gemini browser. Close Chrome windows using the adapter profile and run npm run login.');
+  throw new Error('Unable to open the Gemini browser. Close Chrome windows using the adapter profile and run opencode-gemini-web login.');
 }
 
 // Runs in the browser. Keep selectors and origin checks inside this function.
