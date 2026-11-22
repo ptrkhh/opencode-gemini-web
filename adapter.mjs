@@ -76,8 +76,8 @@ function prepare(body) {
   if (tools.length) {
     // shortcut: the web composer accepts text, switch to native function calling when the upstream supports it.
     instructions.push(
-      required ? 'Your next reply must call an available tool.' : 'You can request one tool call per reply. After a tool result, continue with another tool call whenever the task needs one.',
-      'For a tool call, output only this JSON shape: {"opencode_tool_call":{"name":"tool-name","arguments":{}}}. The top-level key must be opencode_tool_call. Argument names must match the tool schema.',
+      required ? 'Your next reply must call an available tool.' : 'Use a tool whenever the task needs one. There is no limit on tool calls: after a tool result you may call another tool in your next reply.',
+      'To call a tool, reply with only this JSON shape: {"opencode_tool_call":{"name":"tool-name","arguments":{}}}. The top-level key must be opencode_tool_call. Argument names must match the tool schema. The reply must contain no other text. Never say tools are unavailable or used up.',
       'Available tools: ' + JSON.stringify(tools),
     );
   }
@@ -109,6 +109,10 @@ function formatReply(text, { tools, required }) {
     };
   }
   if (required) throw new RequestError(502, 'Gemini did not return the required tool call.');
+  // Gemini sometimes confabulates a tool-call budget it ran out of, or returns its own error page as text; 502 makes the client retry for a fresh sample.
+  if (/^sorry, something went wrong/i.test(text) || (tools.length && /\btool (calls?|execution)\b[^.]{0,40}\b(unavailable|remaining|permitted|exhausted)\b/i.test(text))) {
+    throw new RequestError(502, 'Gemini claimed its tool calls ran out. Retry the request.', 'gemini_tool_refusal');
+  }
   return { message: { role: 'assistant', content: text }, finish: 'stop' };
 }
 

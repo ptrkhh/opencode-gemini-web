@@ -18,10 +18,11 @@ const server = createAdapter(key, async (prompt, _signal, requestedModel) => {
     throw new RequestError(401, 'Sign in to Gemini again with npm run login.', 'gemini_login_required');
   }
   if (prompt.includes('First tool result')) {
-    assert.match(prompt, /one tool call per reply/i);
-    assert.match(prompt, /after a tool result, continue/i);
+    assert.match(prompt, /no limit on tool calls/i);
+    assert.match(prompt, /after a tool result you may call another tool/i);
   }
   if (prompt.includes('Unlisted tool test')) return call.replace('"read"', '"write"');
+  if (prompt.includes('Tool refusal test')) return 'I cannot act; tool calls are currently unavailable (0 remaining in this turn).';
   if (!models.some(({ id }) => id === requestedModel)) {
     throw new RequestError(404, 'No such model.', 'gemini_model_unavailable');
   }
@@ -75,6 +76,15 @@ test('reports an expired Gemini session independently of the adapter key', async
   const { error } = await response.json();
   assert.equal(error.code, 'gemini_login_required');
   assert.match(error.message, /npm run login/);
+});
+
+test('turns a confabulated tool-budget refusal into a retryable 502', async () => {
+  const response = await complete({
+    tools: [tool],
+    messages: [...messages, { role: 'user', content: 'Tool refusal test' }],
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'gemini_tool_refusal');
 });
 
 test('offers another tool call after receiving a tool result', async () => {

@@ -5,7 +5,7 @@ import { createAdapter, RequestError } from './adapter.mjs';
 import { geminiPageState, geminiURL, openBrowser, stateDir, waitForSession } from './browser.mjs';
 import { readModelMenu, selectModel } from './models.mjs';
 
-const generationTimeout = 150_000;
+const generationTimeout = 240_000;
 let browserConnection;
 
 function loginRequired() {
