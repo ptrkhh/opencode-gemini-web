@@ -1,6 +1,6 @@
 {
   "name": "opencode-gemini-web",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Use your signed-in Gemini web account's models from OpenCode through a local adapter",
   "type": "module",
   "bin": {
