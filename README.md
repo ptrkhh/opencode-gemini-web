@@ -66,7 +66,7 @@ mv ~/.local/state/opencode-hydrogen ~/.local/state/opencode-gemini-web
 ## Configuration notes
 
 The state directory defaults to `~/.local/state/opencode-gemini-web`. Set
-`XDG_STATE_HOME` before running both commands to use a different state root.
+`XDG_STATE_HOME` before running the commands to use a different state root.
 The adapter and Chrome's debug port listen on loopback. Give access to the
 browser profile and its debugger only to people who should control that Gemini
 session.
@@ -82,15 +82,24 @@ If OpenCode reports that your Gemini session expired, run
 `opencode-gemini-web login` again, finish sign-in, and retry in the same
 conversation. If OpenCode reports an invalid local adapter key, check that the
 provider references the key path printed at startup. If a selected model is
-unavailable, refresh the provider catalog with the sync command.
+unavailable, refresh the provider catalog with the sync command. If OpenCode
+keeps retrying and failing, Gemini may be throttling sustained automation on
+your account for a few minutes; wait between sessions.
+
+## Behavior
+
+Each request selects the requested model and sends the OpenCode transcript
+through a fresh Gemini Temporary Chat. The adapter supports text and one tool call per reply. OpenCode can
+run more tool calls in subsequent replies and applies its own tool permissions.
+Streaming clients receive the completed reply as SSE.
+
+Each reply costs a full Gemini web round-trip, so tool-heavy tasks take
+minutes. If Gemini returns its own error page or claims it ran out of tool
+calls, the adapter reports it as a retryable error and OpenCode retries the
+request automatically.
 
 ## Working on the source
 
 Clone the repository, run `npm ci`, and use `npm run login`, `npm start`,
 `npm run sync-models`, and `npm test` in place of the global CLI. The `npm`
 scripts run the same code as the CLI.
-
-Each request selects the requested model and sends the OpenCode transcript
-through a fresh Gemini Temporary Chat. The adapter supports text and one tool call per reply. OpenCode can
-run more tool calls in subsequent replies and applies its own tool permissions.
-Streaming clients receive the completed reply as SSE.
