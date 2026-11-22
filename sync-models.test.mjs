@@ -31,7 +31,17 @@ test('creates a modern provider and refuses to replace a different endpoint', ()
   const provider = synced.providers['gemini-web'];
   assert.equal(provider.settings.apiKey, '{file:/private/key}');
   assert.deepEqual(provider.models['3.1-pro'].capabilities, { tools: true });
+  assert.deepEqual(synced.plugins, ['opencode-gemini-web']);
   provider.settings.baseURL = 'http://another-server/v1';
   assert.throws(() => syncConfig(synced, models, keyFile), /different endpoint/);
   assert.throws(() => syncConfig({}, [], keyFile), /empty model list/);
+});
+
+test('registers the autostart plugin, merges existing entries, and honors the opt-out', () => {
+  assert.deepEqual(syncConfig({ plugins: ['other'] }, models, keyFile).plugins, ['other', 'opencode-gemini-web']);
+  assert.deepEqual(syncConfig({}, models, keyFile).plugins, ['opencode-gemini-web']);
+  const optedOut = syncConfig({ plugins: ['-opencode-gemini-web'] }, models, keyFile);
+  assert.deepEqual(optedOut.plugins, ['-opencode-gemini-web']);
+  const legacy = syncConfig({ provider: { 'gemini-web': { options: { baseURL: 'http://127.0.0.1:19323/v1' } } } }, models, keyFile);
+  assert.deepEqual(legacy.plugin, ['opencode-gemini-web']);
 });

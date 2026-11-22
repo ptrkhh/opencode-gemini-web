@@ -36,6 +36,8 @@ export function syncConfig(config, catalog, keyPath) {
       ? { tool_call: true, ...prior, name }
       : { ...prior, name, capabilities: { tools: true, ...prior?.capabilities } }];
   }));
+  const pluginKey = legacy ? 'plugin' : 'plugins';
+  const wantedPlugins = config[pluginKey] ?? [];
   const provider = {
     ...previous,
     name: previous?.name ?? 'Gemini Web',
@@ -48,6 +50,10 @@ export function syncConfig(config, catalog, keyPath) {
   return {
     ...config,
     [section]: { ...config[section], [providerId]: provider },
+    // The plugin autostarts the adapter when OpenCode boots; a '-' entry is the user's opt-out.
+    ...(Array.isArray(wantedPlugins) && !wantedPlugins.includes('-opencode-gemini-web')
+      ? { [pluginKey]: [...new Set([...wantedPlugins, 'opencode-gemini-web'])] }
+      : {}),
     ...(Array.isArray(config.enabled_providers)
       ? { enabled_providers: [...new Set([...config.enabled_providers, providerId])] }
       : {}),

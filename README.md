@@ -32,15 +32,17 @@ through a local, OpenAI-compatible adapter.
    through DevTools. If the host has a virtual desktop, run the command with
    that desktop's display environment.
 
-3. Start the adapter. It listens on `127.0.0.1:19323` and prints the path of
-   its key file; keep it running:
+3. Start the adapter once. It writes the local key file, listens on
+   `127.0.0.1:19323`, and prints the key path. After step 5, OpenCode
+   autostarts it for you:
 
    ```sh
    opencode-gemini-web start
    ```
 
-4. In a second terminal, write the `gemini-web` provider into your OpenCode
-   user config (`~/.config/opencode/opencode.json`) and print the model IDs:
+4. In a second terminal, write the `gemini-web` provider and the autostart
+   plugin into your OpenCode user config
+   (`~/.config/opencode/opencode.json`) and print the model IDs:
 
    ```sh
    opencode-gemini-web sync
@@ -52,6 +54,8 @@ through a local, OpenAI-compatible adapter.
    exists.
 
 5. Restart OpenCode, open `/models`, and select a `gemini-web/...` model.
+   On the first start after syncing, OpenCode installs the plugin in the
+   background, so autostart kicks in from the next start.
 
 Instead of a global install you can run any command without installing:
 `npx opencode-gemini-web login` and so on.
@@ -97,6 +101,13 @@ Each reply costs a full Gemini web round-trip, so tool-heavy tasks take
 minutes. If Gemini returns its own error page or claims it ran out of tool
 calls, the adapter reports it as a retryable error and OpenCode retries the
 request automatically.
+
+While the plugin from step 4 is enabled, OpenCode checks on every start
+whether the adapter answers on `127.0.0.1:19323` and spawns it detached when
+it does not, so the models are ready as soon as OpenCode opens. The adapter
+then keeps running after OpenCode exits; stop it with
+`pkill -f "cli.mjs start"`. To turn autostart off, run the sync step again
+after adding `"-opencode-gemini-web"` to the `plugins` list in your config.
 
 ## Working on the source
 
