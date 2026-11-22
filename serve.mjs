@@ -3,23 +3,24 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createAdapter, RequestError } from './adapter.mjs';
 import { geminiPageState, geminiURL, openBrowser, stateDir, waitForSession } from './browser.mjs';
+import { readModelMenu, selectModel } from './models.mjs';
 
-const mode = 'Hydrogen Thinking';
 const generationTimeout = 150_000;
-let browser;
+let browserConnection;
 
 function loginRequired() {
   return new RequestError(401, 'Sign in to Gemini again. Run npm run login in the adapter folder, finish in Chrome, then retry in OpenCode.', 'gemini_login_required');
 }
 
-async function generate(prompt, signal) {
-  if (!browser?.isConnected()) {
-    try {
-      ({ browser } = await openBrowser());
-    } catch (error) {
-      throw new RequestError(503, error.message, 'gemini_browser_unavailable');
-    }
-  }
+async function withChat(signal, operation) {
+  browserConnection ??= openBrowser().then(({ browser }) => {
+    browser.once('disconnected', () => { browserConnection = undefined; });
+    return browser;
+  }).catch(error => {
+    browserConnection = undefined;
+    throw new RequestError(503, error.message, 'gemini_browser_unavailable');
+  });
+  const browser = await browserConnection;
   signal.throwIfAborted();
   const page = await browser.contexts()[0].newPage();
   const close = () => page.close().catch(() => {});
@@ -38,20 +39,31 @@ async function generate(prompt, signal) {
     await page.getByRole('button', { name: 'Turn on temporary chat', exact: true }).click();
     await page.getByRole('button', { name: 'Turn off temporary chat', exact: true }).waitFor();
 
-    stage = 'selecting Hydrogen Thinking';
-    const picker = page.locator('[data-test-id=bard-mode-menu-button]:visible');
-    await picker.waitFor();
-    if (!(await picker.getAttribute('aria-label'))?.endsWith(mode)) {
-      await picker.click();
-      const option = page.getByText(mode, { exact: true }).last();
-      const available = await option.waitFor({ timeout: 3000 }).then(() => true, () => false);
-      if (available) await option.click();
-    }
-    if (!(await picker.getAttribute('aria-label'))?.endsWith(mode)) {
-      throw new RequestError(403, 'Hydrogen Thinking is unavailable for the signed-in Gemini account.', 'gemini_model_unavailable');
-    }
+    return await Promise.race([operation(page, next => { stage = next; }), expired]);
+  } catch (error) {
+    if (error.status) throw error;
+    if (await page.evaluate(geminiPageState, true).catch(() => null)) throw loginRequired();
+    if (error.name === 'TimeoutError') throw new RequestError(504, `Timed out while ${stage}.`);
+    throw new RequestError(502, `The Gemini browser failed while ${stage}.`);
+  } finally {
+    signal.removeEventListener('abort', close);
+    await close();
+  }
+}
 
-    stage = 'submitting the prompt';
+function listModels(signal) {
+  return withChat(signal, (page, stage) => {
+    stage('reading Gemini’s model menu');
+    return readModelMenu(page).then(({ choices }) => choices);
+  });
+}
+
+function generate(prompt, signal, model) {
+  return withChat(signal, async (page, stage) => {
+    stage('selecting the requested model');
+    await selectModel(page, model);
+
+    stage('submitting the prompt');
     const composer = page.locator('rich-textarea [contenteditable=true]:visible');
     await composer.fill(prompt);
     const started = page.waitForResponse(res => {
@@ -61,18 +73,18 @@ async function generate(prompt, signal) {
     }, { timeout: 15000 });
     started.catch(() => {});
     await composer.press('Enter');
-    const upstream = await Promise.race([started, expired]);
+    const upstream = await started;
     if (upstream.status() === 401) throw loginRequired();
     if (!upstream.ok()) {
       throw new RequestError(upstream.status() === 429 ? 429 : 502, `Gemini returned HTTP ${upstream.status()}.`);
     }
 
-    stage = 'waiting for Gemini’s reply';
+    stage('waiting for Gemini’s reply');
     const copy = page.locator('model-response').last().getByRole('button', { name: 'Copy', exact: true });
-    await Promise.race([copy.waitFor({ timeout: generationTimeout }), expired]);
+    await copy.waitFor({ timeout: generationTimeout });
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
 
-    stage = 'copying the reply';
+    stage('copying the reply');
     await page.evaluate(() => {
       const save = async text => { window.__opencodeMarkdown = text; };
       Object.defineProperties(navigator.clipboard, {
@@ -87,15 +99,7 @@ async function generate(prompt, signal) {
     const text = await page.evaluate(() => window.__opencodeMarkdown);
     if (!text.trim()) throw new RequestError(502, 'Gemini returned an empty reply.');
     return text;
-  } catch (error) {
-    if (error.status) throw error;
-    if (await page.evaluate(geminiPageState, true).catch(() => null)) throw loginRequired();
-    if (error.name === 'TimeoutError') throw new RequestError(504, `Timed out while ${stage}.`);
-    throw new RequestError(502, `The Gemini browser failed while ${stage}.`);
-  } finally {
-    signal.removeEventListener('abort', close);
-    await close();
-  }
+  });
 }
 
 const keyPath = join(stateDir, 'key');
@@ -106,8 +110,8 @@ try {
   if (error.code !== 'EEXIST') throw error;
 }
 const key = readFileSync(keyPath, 'utf8').trim();
-const server = createAdapter(key, generate);
+const server = createAdapter(key, generate, listModels);
 server.listen(19323, '127.0.0.1', () => {
-  console.log('Hydrogen adapter listening on 127.0.0.1:19323');
+  console.log('Gemini Web adapter listening on 127.0.0.1:19323');
   console.log(`OpenCode apiKey file is ${keyPath}`);
 });

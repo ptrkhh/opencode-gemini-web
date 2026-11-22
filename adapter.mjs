@@ -1,8 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 
-export const model = 'hydrogen-thinking';
-
 export class RequestError extends Error {
   constructor(status, message, code) {
     super(message);
@@ -36,7 +34,9 @@ function prepare(body) {
   if (!isObject(body) || !Array.isArray(body.messages) || body.messages.length === 0) {
     throw new RequestError(400, 'Expected a nonempty messages array.');
   }
-  if (body.model !== model) throw new RequestError(404, 'Unknown model.');
+  if (typeof body.model !== 'string' || !body.model.trim()) {
+    throw new RequestError(400, 'Expected a model ID.');
+  }
   if (body.n !== undefined && body.n !== 1) throw new RequestError(400, 'Only one response is supported.');
   if (body.response_format && body.response_format.type !== 'text') {
     throw new RequestError(400, 'Only text response format is supported.');
@@ -117,7 +117,7 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-export function createAdapter(key, generate) {
+export function createAdapter(key, generate, listModels) {
   if (!key) throw new Error('A local bearer key is required.');
   const expected = Buffer.from('Bearer ' + key);
   let tail = Promise.resolve();
@@ -131,28 +131,33 @@ export function createAdapter(key, generate) {
         message: 'The local adapter key is invalid. Check the apiKey file in your OpenCode provider configuration.',
       } });
     }
-    if (req.method === 'GET' && req.url === '/v1/models') {
-      return json(res, 200, { object: 'list', data: [{ id: model, object: 'model', owned_by: 'gemini-web' }] });
-    }
-    if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+    const listing = req.method === 'GET' && req.url === '/v1/models';
+    if (!listing && (req.method !== 'POST' || req.url !== '/v1/chat/completions')) {
       return json(res, 404, { error: { message: 'Unknown endpoint.' } });
     }
 
     const abort = new AbortController();
     res.on('close', () => abort.abort());
     try {
+      if (listing) {
+        const models = await listModels(abort.signal);
+        if (res.destroyed) return;
+        return json(res, 200, { object: 'list', data: models.map(({ id, name }) => ({
+          id, name, object: 'model', owned_by: 'gemini-web',
+        })) });
+      }
       const body = await readRequest(req);
       const request = prepare(body);
       if (pending >= 4) throw new RequestError(429, 'The Gemini browser queue is full.');
       pending++;
       const result = tail.then(() => {
         abort.signal.throwIfAborted();
-        return generate(request.prompt, abort.signal);
+        return generate(request.prompt, abort.signal, body.model);
       });
       tail = result.catch(() => {}).finally(() => { pending--; });
       const { message, finish } = formatReply(await result, request);
       if (res.destroyed) return;
-      const response = { id: 'chatcmpl-' + randomUUID(), created: Math.floor(Date.now() / 1000), model };
+      const response = { id: 'chatcmpl-' + randomUUID(), created: Math.floor(Date.now() / 1000), model: body.model };
       if (!body.stream) {
         return json(res, 200, { ...response, object: 'chat.completion', choices: [{ index: 0, message, finish_reason: finish }] });
       }

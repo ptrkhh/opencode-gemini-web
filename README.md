@@ -1,8 +1,8 @@
-# OpenCode Hydrogen Thinking
+# Gemini Web for OpenCode
 
-Use Gemini's **Hydrogen Thinking** web mode from OpenCode through a local,
-OpenAI-compatible adapter. You need Node.js 22 or newer, Google Chrome, and a
-Google account that offers **Hydrogen Thinking** in Gemini.
+Use the models available in your signed-in Gemini web account from OpenCode
+through a local, OpenAI-compatible adapter. You need Node.js 22 or newer,
+Google Chrome, and access to Gemini and Temporary Chat.
 
 ## Sign in and start
 
@@ -27,47 +27,34 @@ profile and its debugger only to people who should control that Gemini session.
 
 ## Connect OpenCode
 
-Merge this provider into your `opencode.json`:
-
-```json
-{
-  "providers": {
-    "gemini-web": {
-      "name": "Gemini Web",
-      "package": "@opencode/ai/providers/openai-compatible",
-      "settings": {
-        "baseURL": "http://127.0.0.1:19323/v1",
-        "apiKey": "{file:~/.local/state/opencode-hydrogen/key}"
-      },
-      "models": {
-        "hydrogen-thinking": {
-          "name": "Hydrogen Thinking",
-          "capabilities": { "tools": true }
-        }
-      }
-    }
-  }
-}
-```
-
-Use the key path printed by `npm start` if you changed the state directory. If
-your existing configuration has a provider allowlist, add `gemini-web` to it.
-Run `opencode reload` and select `gemini-web/hydrogen-thinking` in `/models`.
+With the adapter running and Gemini signed in, sync the model list and reload
+OpenCode.
 
 ```sh
-opencode run -m gemini-web/hydrogen-thinking "Reply with one sentence."
+npm run sync-models
+opencode reload
 ```
 
+The sync command reads Gemini's live Temporary Chat model picker through the
+adapter's `GET /v1/models` endpoint. It updates the `gemini-web` entry in your
+OpenCode user config, then prints the IDs you can select in `/models`. Run it
+again when you switch accounts or Gemini changes the available models. The
+original `gemini-web/hydrogen-thinking` ID is preserved when that option exists.
+
+To target a different JSON config, use `npm run sync-models -- path/to/opencode.json`.
+If your config uses JSONC comments or trailing commas, print the provider block
+with `npm run --silent sync-models -- --print` and merge it into your config.
+
 If OpenCode reports that your Gemini session expired, run `npm run login` again,
-finish sign-in, and retry in the same OpenCode session. If OpenCode reports an
+finish sign-in, and retry in the same conversation. If OpenCode reports an
 invalid local adapter key, check that the provider references the key path
-printed at startup. If the signed-in account lacks Hydrogen Thinking, the
-adapter reports that the model is unavailable.
+printed at startup. If a selected model is unavailable, refresh the provider
+catalog with the sync command.
 
 ## Behavior
 
-Each request sends the OpenCode transcript through a fresh Gemini Temporary
-Chat. The adapter supports text and one tool call per reply. OpenCode can run
+Each request selects the requested model and sends the OpenCode transcript
+through a fresh Gemini Temporary Chat. The adapter supports text and one tool call per reply. OpenCode can run
 more tool calls in subsequent replies and applies its own tool permissions.
 Streaming clients receive the completed reply as SSE.
 

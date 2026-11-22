@@ -8,8 +8,10 @@ const assistant = { role: 'assistant', content: 'test completed' };
 const call = '```json\n{"opencode_tool_call":{"name":"read","arguments":{"path":"README.md"}}}\n```';
 const messages = [{ role: 'system', content: 'System text' }, { role: 'user', content: 'User text' }];
 const model = 'hydrogen-thinking';
+const pro = '3.1-pro';
+let models = [{ id: model, name: '4 Hydrogen Thinking' }, { id: pro, name: '3.1 Pro' }];
 const tool = { type: 'function', function: { name: 'read', parameters: { type: 'object' } } };
-const server = createAdapter(key, async (prompt) => {
+const server = createAdapter(key, async (prompt, _signal, requestedModel) => {
   assert.match(prompt, /System text/);
   assert.match(prompt, /User text/);
   if (prompt.includes('Expired Gemini session')) {
@@ -20,8 +22,11 @@ const server = createAdapter(key, async (prompt) => {
     assert.match(prompt, /after a tool result, continue/i);
   }
   if (prompt.includes('Unlisted tool test')) return call.replace('"read"', '"write"');
+  if (!models.some(({ id }) => id === requestedModel)) {
+    throw new RequestError(404, 'No such model.', 'gemini_model_unavailable');
+  }
   return prompt.includes('"name":"read"') ? call : assistant.content;
-});
+}, () => models);
 
 let root;
 before(async () => {
@@ -37,12 +42,28 @@ const complete = (body) => fetch(root + '/chat/completions', {
   body: JSON.stringify({ model, messages, ...body }),
 });
 
-test('requires the local bearer key and exposes exactly Hydrogen Thinking', async () => {
+test('requires the local bearer key and lists the live catalog', async () => {
   const unauthorized = await list();
   assert.equal(unauthorized.status, 401);
   assert.equal((await unauthorized.json()).error.code, 'invalid_adapter_key');
   const response = await list({ Authorization: 'Bearer ' + key });
-  assert.deepEqual((await response.json()).data.map(item => item.id), [model]);
+  assert.deepEqual((await response.json()).data.map(({ id, name }) => ({ id, name })), models);
+  models = [{ id: model, name: '4 Hydrogen Thinking' }];
+  try {
+    const refreshed = await list({ Authorization: 'Bearer ' + key });
+    assert.deepEqual((await refreshed.json()).data.map(item => item.id), [model]);
+  } finally {
+    models.push({ id: pro, name: '3.1 Pro' });
+  }
+});
+
+test('routes a non-Hydrogen model and echoes its ID in the response', async () => {
+  const response = await complete({ model: pro });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).model, pro);
+  const unavailable = await complete({ model: 'unavailable-model' });
+  assert.equal(unavailable.status, 404);
+  assert.equal((await unavailable.json()).error.code, 'gemini_model_unavailable');
 });
 
 test('reports an expired Gemini session independently of the adapter key', async () => {
