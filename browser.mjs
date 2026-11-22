@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
-export const stateDir = join(process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'opencode-hydrogen');
+export const stateDir = join(process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'opencode-gemini-web');
 export const geminiURL = 'https://gemini.google.com/u/0/app?hl=en';
 export const googleAccounts = 'https://accounts.google.com';
 const profile = join(stateDir, 'chrome');
