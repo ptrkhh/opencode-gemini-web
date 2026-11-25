@@ -16,6 +16,7 @@
     "start": "node serve.mjs",
     "test": "node --test",
     "login": "node login.mjs",
+    "smoke": "node smoke.mjs",
     "sync-models": "node sync-models.mjs"
   },
   "dependencies": {

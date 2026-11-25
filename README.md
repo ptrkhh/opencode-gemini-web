@@ -90,6 +90,18 @@ unavailable, refresh the provider catalog with the sync command. If OpenCode
 keeps retrying and failing, Gemini may be throttling sustained automation on
 your account for a few minutes; wait between sessions.
 
+If the error mentions an unusual-traffic CAPTCHA, Google has flagged the
+adapter's browser. Solve the CAPTCHA in that Chrome window (it is a
+`google.com/sorry` page), wait a few minutes, and retry. The adapter refuses new
+requests for two minutes after seeing it, because every extra page load makes
+the block last longer. If it reports that the Gemini page stopped responding,
+restart the adapter with `opencode-gemini-web start`.
+
+At startup the adapter enters a 40 KB test prompt without sending it and logs
+whether that worked. `opencode-gemini-web smoke [model]` sends a full-size
+request through the running adapter and reports the time; it uses one real
+Gemini reply, so run it sparingly.
+
 ## Behavior
 
 Each request selects the requested model and sends the OpenCode transcript
