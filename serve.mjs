@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createAdapter, RequestError } from './adapter.mjs';
 import { geminiPageState, geminiURL, openBrowser, stateDir, waitForSession } from './browser.mjs';
-import { captchaPage, createCooldown, pageResponsive } from './health.mjs';
+import { captchaPage, createCooldown, pageResponsive, typePrompt } from './health.mjs';
 import { readModelMenu, selectModel } from './models.mjs';
 
 const generationTimeout = 240_000;
@@ -62,12 +62,6 @@ async function withChat(signal, operation) {
     signal.removeEventListener('abort', close);
     await Promise.race([close(), delay(3000)]); // a hung renderer can leave close() pending forever
   }
-}
-
-// fill() stalls Chrome's renderer for 10s+ on prompts of tens of KB; native insertText takes ~70ms. The page is a fresh Temporary Chat, so the composer is empty.
-async function typePrompt(page, composer, text) {
-  await composer.focus();
-  await page.keyboard.insertText(text);
 }
 
 function listModels(signal) {
@@ -128,8 +122,9 @@ async function selfTest() {
     await withChat(new AbortController().signal, async (page, stage) => {
       stage('entering a 40 KB test prompt');
       const composer = page.locator('rich-textarea [contenteditable=true]:visible');
-      await typePrompt(page, composer, 'self-test '.repeat(4000));
-      if (!(await composer.textContent()).includes('self-test')) throw new Error('the composer stayed empty');
+      const text = 'self-test '.repeat(4000).trim();
+      await typePrompt(page, composer, text);
+      if ((await composer.textContent()).trim() !== text) throw new Error('the composer did not hold exactly the test prompt');
     });
     console.log(`Self-test passed: a 40 KB prompt was entered in ${Date.now() - started} ms.`);
   } catch (error) {

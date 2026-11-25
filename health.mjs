@@ -12,3 +12,12 @@ export function createCooldown(ms, now = Date.now) {
 
 // Google's "unusual traffic" interstitial replaces Gemini; every further load makes the block last longer.
 export const captchaPage = url => /^https:\/\/(www\.)?google\.[a-z.]+\/sorry\//.test(url);
+
+// fill() stalls Chrome's renderer for 10s+ whenever the composer already holds a large draft (it replaces the selection in one edit; one such replace took 81 s).
+// Gemini restores unsent drafts into new tabs, even Temporary Chat, and insertText appends to them. So clear first (10 ms for 60 KB), then insert into the empty composer (about 70 ms for 44 KB).
+export async function typePrompt(page, composer, text) {
+  await composer.focus();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Delete');
+  await page.keyboard.insertText(text);
+}

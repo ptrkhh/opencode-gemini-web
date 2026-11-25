@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { captchaPage, createCooldown, pageResponsive } from './health.mjs';
+import { captchaPage, createCooldown, pageResponsive, typePrompt } from './health.mjs';
 
 test('a page that answers is responsive; hung or crashed pages are not', async () => {
   assert.equal(await pageResponsive({ evaluate: async () => true }, 50), true);
@@ -24,4 +24,12 @@ test('recognises Google\'s unusual-traffic page and nothing else', () => {
   assert.equal(captchaPage('https://www.google.co.uk/sorry/index?q=1'), true);
   assert.equal(captchaPage('https://gemini.google.com/u/0/app?hl=en'), false);
   assert.equal(captchaPage('https://evil.example/https://www.google.com/sorry/'), false);
+});
+
+test('typing a prompt clears a restored draft first, in a separate edit from the insert', async () => {
+  const calls = [];
+  const composer = { focus: async () => calls.push('focus') };
+  const keyboard = { press: async key => calls.push('press ' + key), insertText: async text => calls.push('insert ' + text) };
+  await typePrompt({ keyboard }, composer, 'prompt');
+  assert.deepEqual(calls, ['focus', 'press Control+A', 'press Delete', 'insert prompt']);
 });
