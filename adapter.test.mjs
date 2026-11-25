@@ -6,6 +6,18 @@ import { createAdapter, RequestError } from './adapter.mjs';
 const key = 'local-test-key';
 const assistant = { role: 'assistant', content: 'test completed' };
 const call = '```json\n{"opencode_tool_call":{"name":"read","arguments":{"path":"README.md"}}}\n```';
+const fenced = json => '```json\n' + json + '\n```';
+const code = { opencode_tool_call: { name: 'read', arguments: { path: 'a "b" \\ c\n```\n<<<end>>>' } } };
+const replies = {
+  executed: '```python\nprint(1)\n```\n\n```text\nTraceback: <xbox-string>\n```\n\n' + call,
+  roundtrip: fenced(JSON.stringify(code)),
+  badfence: fenced('{"opencode_tool_call":{"name":"read","arguments":{"path":"a "b" c"}}}'),
+  trailing: call + '\nDone.',
+  quoted: 'Example: ' + call + ' is how you call it, as requested.',
+  two: fenced('{"opencode_tool_call":{"name":"read","arguments":{"path":"first"}}}') + '\n' + call,
+  other: fenced('{"hello":"world"}'),
+  untagged: '```\n{"opencode_tool_call":{"name":"read","arguments":{"path":"README.md"}}}\n```',
+};
 const messages = [{ role: 'system', content: 'System text' }, { role: 'user', content: 'User text' }];
 const model = 'hydrogen-thinking';
 const pro = '3.1-pro';
@@ -23,6 +35,8 @@ const server = createAdapter(key, async (prompt, _signal, requestedModel) => {
   }
   if (prompt.includes('Unlisted tool test')) return call.replace('"read"', '"write"');
   if (prompt.includes('Malformed call test')) return '{"opencode_tool_call":{"name":"read","arguments":{"path":"a "b" c"}}}';
+  const reply = replies[(prompt.match(/Reply case: (\w+)/) ?? [])[1]];
+  if (reply) return reply;
   if (prompt.includes('Tool refusal test')) return 'I cannot act; tool calls are currently unavailable (0 remaining in this turn).';
   if (!models.some(({ id }) => id === requestedModel)) {
     throw new RequestError(404, 'No such model.', 'gemini_model_unavailable');
@@ -95,6 +109,57 @@ test('turns a tool call with unescaped quotes into a retryable 502', async () =>
   });
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error.code, 'gemini_bad_tool_json');
+});
+
+const ask = async (name, extra = {}) => complete({
+  tools: [tool], messages: [...messages, { role: 'user', content: 'Reply case: ' + name }], ...extra,
+});
+const callOf = async response => (await response.json()).choices[0];
+
+test('takes the final fenced block after code-execution noise', async () => {
+  const choice = await callOf(await ask('executed'));
+  assert.equal(choice.finish_reason, 'tool_calls');
+  assert.deepEqual(JSON.parse(choice.message.tool_calls[0].function.arguments), { path: 'README.md' });
+});
+
+test('round-trips quotes, backslashes, fences and delimiters inside a fenced call', async () => {
+  const choice = await callOf(await ask('roundtrip'));
+  assert.deepEqual(JSON.parse(choice.message.tool_calls[0].function.arguments), code.opencode_tool_call.arguments);
+});
+
+test('runs the last of two calls and accepts an untagged fence', async () => {
+  assert.deepEqual(JSON.parse((await callOf(await ask('two'))).message.tool_calls[0].function.arguments), { path: 'README.md' });
+  assert.equal((await callOf(await ask('untagged'))).finish_reason, 'tool_calls');
+});
+
+test('rejects a malformed fenced call with a retryable 502', async () => {
+  const response = await ask('badfence');
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'gemini_bad_tool_json');
+});
+
+test('keeps prose, quoted calls and non-call JSON as text; required still demands a call', async () => {
+  for (const name of ['trailing', 'quoted', 'other']) {
+    const choice = await callOf(await ask(name));
+    assert.equal(choice.finish_reason, 'stop', name);
+    assert.ok(choice.message.content);
+  }
+  assert.equal((await ask('trailing', { tool_choice: 'required' })).status, 502);
+  assert.equal((await callOf(await ask('roundtrip', { tool_choice: 'none' }))).finish_reason, 'stop');
+});
+
+test('asks for one fenced JSON call and forbids code execution', () => {
+  let seen = '';
+  const probe = createAdapter(key, async prompt => { seen = prompt; return 'ok'; }, () => models);
+  return new Promise(resolve => probe.listen(0, '127.0.0.1', async () => {
+    await fetch(`http://127.0.0.1:${probe.address().port}/v1/chat/completions`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, tools: [tool] }),
+    });
+    assert.match(seen, /one ```json code block/);
+    assert.match(seen, /own code execution/);
+    probe.close(resolve);
+  }));
 });
 
 test('offers another tool call after receiving a tool result', async () => {

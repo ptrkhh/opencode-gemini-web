@@ -77,7 +77,7 @@ function prepare(body) {
     // shortcut: the web composer accepts text, switch to native function calling when the upstream supports it.
     instructions.push(
       required ? 'Your next reply must call an available tool.' : 'Use a tool whenever the task needs one. There is no limit on tool calls: after a tool result you may call another tool in your next reply.',
-      'To call a tool, reply with only this JSON shape: {"opencode_tool_call":{"name":"tool-name","arguments":{}}}. The top-level key must be opencode_tool_call. Argument names must match the tool schema. The JSON must be valid: escape every double quote inside string values as \\" and every newline as \\n. The reply must contain no other text. Never say tools are unavailable or used up.',
+      'To call a tool, reply with only one ```json code block in exactly this shape:\n```json\n{"opencode_tool_call":{"name":"tool-name","arguments":{"text":"say \\"hi\\"\\nbye"}}}\n```\nUse a declared tool name with its schema\'s argument names and types. The JSON must be valid: inside strings write " as \\" and a newline as \\n. Never use your own code execution; only these tools reach the user\'s machine. Never say tools are unavailable or used up.',
       'Available tools: ' + JSON.stringify(tools),
     );
   }
@@ -87,11 +87,13 @@ function prepare(body) {
 function formatReply(text, { tools, required }) {
   let payload;
   if (tools.length) {
-    const candidate = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1');
+    // Copy re-serialises rendered Markdown: outside a code fence \" and \\ lose a backslash, so the call must be the reply's last fenced block.
+    const fence = [...text.matchAll(/^```[^\n`]*\n([\s\S]*?)^```[ \t]*$/gm)].at(-1);
+    const candidate = (fence && !text.slice(fence.index + fence[0].length).trim() ? fence[1] : text).trim();
     if (candidate.startsWith('{')) {
       try { payload = JSON.parse(candidate); } catch {
-        // Gemini sometimes leaves inner quotes unescaped; without this the broken call reaches OpenCode as plain text.
-        if (candidate.startsWith('{"opencode_tool_call"')) {
+        // Without this a broken call reaches OpenCode as plain text.
+        if (/^\{\s*"opencode_tool_call"/.test(candidate)) {
           throw new RequestError(502, 'Gemini returned a malformed tool call. Retry the request.', 'gemini_bad_tool_json');
         }
       }
