@@ -77,7 +77,7 @@ function prepare(body) {
     // shortcut: the web composer accepts text, switch to native function calling when the upstream supports it.
     instructions.push(
       required ? 'Your next reply must call an available tool.' : 'Use a tool whenever the task needs one. There is no limit on tool calls: after a tool result you may call another tool in your next reply.',
-      'To call a tool, reply with only this JSON shape: {"opencode_tool_call":{"name":"tool-name","arguments":{}}}. The top-level key must be opencode_tool_call. Argument names must match the tool schema. The reply must contain no other text. Never say tools are unavailable or used up.',
+      'To call a tool, reply with only this JSON shape: {"opencode_tool_call":{"name":"tool-name","arguments":{}}}. The top-level key must be opencode_tool_call. Argument names must match the tool schema. The JSON must be valid: escape every double quote inside string values as \\" and every newline as \\n. The reply must contain no other text. Never say tools are unavailable or used up.',
       'Available tools: ' + JSON.stringify(tools),
     );
   }
@@ -89,7 +89,12 @@ function formatReply(text, { tools, required }) {
   if (tools.length) {
     const candidate = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1');
     if (candidate.startsWith('{')) {
-      try { payload = JSON.parse(candidate); } catch {}
+      try { payload = JSON.parse(candidate); } catch {
+        // Gemini sometimes leaves inner quotes unescaped; without this the broken call reaches OpenCode as plain text.
+        if (candidate.startsWith('{"opencode_tool_call"')) {
+          throw new RequestError(502, 'Gemini returned a malformed tool call. Retry the request.', 'gemini_bad_tool_json');
+        }
+      }
     }
   }
   if (isObject(payload) && Object.hasOwn(payload, 'opencode_tool_call')) {

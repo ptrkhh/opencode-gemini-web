@@ -22,6 +22,7 @@ const server = createAdapter(key, async (prompt, _signal, requestedModel) => {
     assert.match(prompt, /after a tool result you may call another tool/i);
   }
   if (prompt.includes('Unlisted tool test')) return call.replace('"read"', '"write"');
+  if (prompt.includes('Malformed call test')) return '{"opencode_tool_call":{"name":"read","arguments":{"path":"a "b" c"}}}';
   if (prompt.includes('Tool refusal test')) return 'I cannot act; tool calls are currently unavailable (0 remaining in this turn).';
   if (!models.some(({ id }) => id === requestedModel)) {
     throw new RequestError(404, 'No such model.', 'gemini_model_unavailable');
@@ -85,6 +86,15 @@ test('turns a confabulated tool-budget refusal into a retryable 502', async () =
   });
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error.code, 'gemini_tool_refusal');
+});
+
+test('turns a tool call with unescaped quotes into a retryable 502', async () => {
+  const response = await complete({
+    tools: [tool],
+    messages: [...messages, { role: 'user', content: 'Malformed call test' }],
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'gemini_bad_tool_json');
 });
 
 test('offers another tool call after receiving a tool result', async () => {
