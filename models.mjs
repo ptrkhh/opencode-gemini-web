@@ -49,4 +49,14 @@ export async function selectModel(page, id) {
   }
   await picker.click();
   await menu.waitFor({ state: 'hidden' });
+  return choice;
+}
+
+export async function verifyModel(page, expected) {
+  const { picker, menu, choices } = await readModelMenu(page);
+  await picker.click();
+  await menu.waitFor({ state: 'hidden' });
+  if (!choices.some(choice => choice.key === expected.key && choice.name === expected.name && choice.checked)) {
+    throw new RequestError(422, 'Gemini changed or disabled the requested model while answering. Check its availability in Gemini, then retry.', 'gemini_model_changed');
+  }
 }

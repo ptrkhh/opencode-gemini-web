@@ -82,7 +82,7 @@ async function run(args) {
   if (!key) throw new Error('Start the adapter with opencode-gemini-web start before syncing OpenCode.');
   const response = await fetch(baseURL + '/models', {
     headers: { Authorization: 'Bearer ' + key },
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(65_000),
   }).catch(error => { throw new Error('Could not reach the running Gemini Web adapter.', { cause: error }); });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error?.message ?? 'Could not read the Gemini models.');

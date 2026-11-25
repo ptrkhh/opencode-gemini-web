@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { modelChoices } from './models.mjs';
+import { modelChoices, verifyModel } from './models.mjs';
 
 test('turns enabled Gemini menu choices into distinct IDs and preserves the original ID', () => {
   const rows = [
@@ -25,4 +25,23 @@ test('disambiguates labels that normalize to the same ID', () => {
     { key: 'bard-mode-option-b', name: 'Test -' },
   ];
   assert.deepEqual(modelChoices(rows).map(({ id }) => id), ['test--a', 'test--b']);
+});
+
+test('rejects a reply when the requested model is no longer active in Gemini', async () => {
+  const expected = { id: 'hydrogen', key: 'bard-mode-option-hydrogen', name: 'Hydrogen' };
+  let state = [{ ...expected, checked: true }];
+  let toggles = 0;
+  const picker = { click: async () => { toggles++; } };
+  const menu = {
+    getByRole: () => ({ first: () => ({ waitFor: async () => {} }), evaluateAll: async () => state }),
+    waitFor: async () => {},
+  };
+  const page = { locator: selector => selector.includes('mode-menu-button') ? picker : menu };
+  await verifyModel(page, expected);
+  state = [
+    { ...expected, checked: false },
+    { key: 'bard-mode-option-default', name: 'Auto', checked: true },
+  ];
+  await assert.rejects(verifyModel(page, expected), { status: 422, code: 'gemini_model_changed' });
+  assert.equal(toggles, 4);
 });

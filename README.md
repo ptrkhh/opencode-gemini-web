@@ -6,18 +6,26 @@ through a local, OpenAI-compatible adapter.
 ## Requirements
 
 - Node.js 22 or newer
-- Google Chrome (set `CHROME_PATH` if it is outside its usual location)
+- Python 3.11 or newer for direct HTTP
+- Google Chrome for sign-in (set `CHROME_PATH` if it is outside its usual location)
 - Access to Gemini and Temporary Chat on the account you sign in with
 
 ## Install
 
-1. Install the CLI from npm. No git, no browser download, and no OpenCode
-   config to hand-edit: the CLI drives the Chrome you already have, and step
-   4 writes the config for you.
+1. Install the CLI and set up the direct client in its own Python environment.
+   Run these commands on Linux or macOS.
 
    ```sh
    npm install -g opencode-gemini-web
+   adapter_state="${XDG_STATE_HOME:-$HOME/.local/state}/opencode-gemini-web"
+   python3 -m venv "$adapter_state/python"
+   "$adapter_state/python/bin/python" -m pip install 'gemini-webapi==2.1.1'
    ```
+
+   On Windows, use `python -m venv <path>` and
+   `<path>\Scripts\python.exe -m pip install gemini-webapi==2.1.1`. Set
+   `GEMINI_PYTHON` to the interpreter if the environment is outside the adapter's
+   state directory.
 
 2. Sign in to Gemini. This opens Chrome with a dedicated browser profile that
    stores the session:
@@ -48,8 +56,9 @@ through a local, OpenAI-compatible adapter.
    opencode-gemini-web sync
    ```
 
-   The command reads Gemini's live Temporary Chat model picker. Run it again
-   when you switch accounts or Gemini changes the available models. The
+   The command reads the models available to the adapter's Gemini session.
+   Restart the adapter after intentionally switching Google accounts and run
+   sync again when Gemini changes the available models. The
    original `gemini-web/hydrogen-thinking` ID is preserved when that option
    exists.
 
@@ -59,6 +68,17 @@ through a local, OpenAI-compatible adapter.
 
 Instead of a global install you can run any command without installing:
 `npx opencode-gemini-web login` and so on.
+
+## Upgrading from 1.1.4 or earlier
+
+Set up the Python environment from step 1 before starting the new direct
+backend. To keep using the Chrome backend, start it with
+`GEMINI_TRANSPORT=browser opencode-gemini-web start`.
+
+Stop the previous adapter first, then run `opencode-gemini-web start` and
+`opencode-gemini-web sync`. If OpenCode started the old adapter in the
+background, find the adapter process listening on port `19323` and stop that
+process. You can reuse your existing Chrome profile and adapter key.
 
 If you used an earlier name of this repo, move your saved session to the new
 state directory so you do not have to sign in again:
@@ -75,6 +95,11 @@ The adapter and Chrome's debug port listen on loopback. Give access to the
 browser profile and its debugger only to people who should control that Gemini
 session.
 
+The default transport uses HanaokaYuzu's `gemini-webapi` Python client. Set
+`GEMINI_PYTHON` to select an existing environment with the pinned version.
+Start the adapter with `GEMINI_TRANSPORT=browser` to use Chrome for generation
+and model discovery.
+
 To target a different JSON config, use
 `opencode-gemini-web sync path/to/opencode.json`. If your config uses JSONC
 comments or trailing commas, print the provider block with
@@ -90,39 +115,62 @@ unavailable, refresh the provider catalog with the sync command. If OpenCode
 keeps retrying and failing, Gemini may be throttling sustained automation on
 your account for a few minutes; wait between sessions.
 
-If the error mentions an unusual-traffic CAPTCHA, Google has flagged the
-adapter's browser. Solve the CAPTCHA in that Chrome window (it is a
-`google.com/sorry` page), wait a few minutes, and retry. The adapter refuses new
-requests for two minutes after seeing it, because every extra page load makes
-the block last longer. If it reports that the Gemini page stopped responding,
-restart the adapter with `opencode-gemini-web start`.
+The direct worker starts with the session cookies from the dedicated Chrome
+profile. HanaokaYuzu refreshes Google's short-lived `__Secure-1PSIDTS` cookie
+about every ten minutes while the session is authenticated. The adapter keeps
+the worker's cookie cache in a private temporary directory and deletes it
+when the worker exits. If Google rejects the session, the next request starts a
+new worker from Chrome's current cookies. If Chrome also needs sign-in, use
+the login command.
 
-At startup the adapter enters a 40 KB test prompt without sending it and logs
-whether that worked. `opencode-gemini-web smoke [model]` sends a full-size
-request through the running adapter and reports the time; it uses one real
-Gemini reply, so run it sparingly.
+Run `opencode-gemini-web login` if Google shows a challenge in Chrome. Finish
+the challenge manually before retrying. When Gemini rate-limits requests,
+the adapter pauses work for at least the reported retry interval or for a
+minute if Gemini provides no interval. The direct backend pauses only the
+requested model when Gemini reports a model usage limit.
+
+`opencode-gemini-web smoke [model]` sends a synthetic request of about 40 KB
+and checks for the expected reply. Pass a model ID to use it directly or omit
+it to choose from Gemini's current menu. The command uses one real Gemini
+reply.
 
 ## Behavior
 
-Each request selects the requested model and sends the OpenCode transcript
-through a fresh Gemini Temporary Chat. The adapter supports text and one tool call per reply. OpenCode can
-run more tool calls in subsequent replies and applies its own tool permissions.
-Streaming clients receive the completed reply as SSE.
+The direct backend starts a Gemini Temporary Chat with the full OpenCode
+transcript. For tool-enabled requests carrying an exact
+`x-opencode-session-id`, it sends only the new messages when the incoming
+transcript extends the previous one and the model and tool instructions still
+match. The adapter starts a fresh chat for a repeated request, a transcript rewrite
+such as compaction, or a model or tool change. If Gemini loses a retained chat,
+the adapter resends the full transcript once. The cache holds up to 32 chats
+in memory and reuses a chat for at most 40 turns or 30 minutes of inactivity.
+Other requests and the Chrome fallback use fresh chats.
 
-Each reply costs a full Gemini web round-trip, so tool-heavy tasks take
-minutes. If Gemini returns its own error page or claims it ran out of tool
-calls, the adapter reports it as a retryable error and OpenCode retries the
-request automatically.
+Chrome provides the signed-in session at worker startup and after an
+authentication failure. Clients can
+request a batch of independent tool calls with `parallel_tool_calls: true`.
+OpenCode applies its own tool
+permissions. The direct backend streams text as Gemini produces it for
+requests without active tools. Replies that can contain tool calls are
+validated in full before the adapter sends them as SSE. The Chrome fallback
+sends complete replies as SSE.
 
-While the plugin from step 4 is enabled, OpenCode checks on every start
-whether the adapter answers on `127.0.0.1:19323` and spawns it detached when
-it does not, so the models are ready as soon as OpenCode opens. The adapter
-then keeps running after OpenCode exits; stop it with
-`pkill -f "cli.mjs start"`. To turn autostart off, run the sync step again
-after adding `"-opencode-gemini-web"` to the `plugins` list in your config.
+When a reply contains an unusable tool call, claims its tool budget ran out, or
+asks for “reply to continue” before an available action, the adapter tries one
+short correction in the same Temporary Chat. The operation has a five-minute
+limit. The adapter processes one request at a time and removes
+queued requests when their clients disconnect.
+
+While the plugin from step 4 is enabled, OpenCode checks the adapter's local
+health endpoint at startup and spawns it detached if the port is unreachable.
+The health check uses no Gemini browser session. The adapter keeps running
+after OpenCode exits. To turn autostart off, run the sync step again after
+adding `"-opencode-gemini-web"` to the `plugins` list in your config.
 
 ## Working on the source
 
-Clone the repository, run `npm ci`, and use `npm run login`, `npm start`,
-`npm run sync-models`, and `npm test` in place of the global CLI. The `npm`
-scripts run the same code as the CLI.
+Clone the repository, run `npm ci`, and install `requirements.txt` into the
+adapter's Python environment. Use `npm run login`, `npm start`,
+`npm run sync-models`, and `npm test` in place of the global CLI.
+Run `python -m unittest direct_worker_test` from that environment to test the
+Python worker.

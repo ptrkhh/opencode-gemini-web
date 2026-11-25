@@ -1,6 +1,6 @@
 {
   "name": "opencode-gemini-web",
-  "version": "1.1.4",
+  "version": "2.0.0",
   "description": "Use your signed-in Gemini web account's models from OpenCode through a local adapter",
   "type": "module",
   "exports": {
@@ -20,7 +20,7 @@
     "sync-models": "node sync-models.mjs"
   },
   "dependencies": {
-    "@opencode/plugin": "^2.3.2",
+    "@opencode/plugin": "2.3.2",
     "playwright-core": "1.65.1"
   }
 }

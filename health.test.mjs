@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { captchaPage, createCooldown, pageResponsive, typePrompt } from './health.mjs';
+import { captchaPage, createCooldown, guardPage, pageResponsive, typePrompt } from './health.mjs';
 
 test('a page that answers is responsive; hung or crashed pages are not', async () => {
   assert.equal(await pageResponsive({ evaluate: async () => true }, 50), true);
@@ -31,5 +31,17 @@ test('typing a prompt clears a restored draft first, in a separate edit from the
   const composer = { focus: async () => calls.push('focus') };
   const keyboard = { press: async key => calls.push('press ' + key), insertText: async text => calls.push('insert ' + text) };
   await typePrompt({ keyboard }, composer, 'prompt');
-  assert.deepEqual(calls, ['focus', 'press Control+A', 'press Delete', 'insert prompt']);
+  assert.deepEqual(calls, ['focus', 'press ControlOrMeta+A', 'press Delete', 'insert prompt']);
+});
+
+test('the page watchdog interrupts a hung operation and honors disconnects', async () => {
+  const never = new Promise(() => {});
+  const hungError = new Error('page unresponsive');
+  const signal = new AbortController().signal;
+  await assert.rejects(guardPage({ evaluate: () => never }, signal, () => never, () => hungError, 10), /page unresponsive/);
+  const client = new AbortController();
+  const run = guardPage({ evaluate: async () => true }, client.signal, () => never, () => hungError, 10);
+  client.abort();
+  await assert.rejects(run, { name: 'AbortError' });
+  assert.equal(await guardPage({}, signal, async () => 'done', () => hungError, 10), 'done');
 });
